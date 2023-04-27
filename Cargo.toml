@@ -2,7 +2,10 @@
 name = "toydb"
 version = "0.1.0"
 edition = "2021"
-
+authors = ["liangchangyoujackson@gmail.com"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clippy = "0.0.302"
+serde_derive = "1.0.160"
+tokio-serde = "0.8.0"
