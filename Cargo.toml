@@ -7,5 +7,7 @@ authors = ["liangchangyoujackson@gmail.com"]
 
 [dependencies]
 clippy = "0.0.302"
+rand = "0.8.5"
+serde = "1.0.160"
 serde_derive = "1.0.160"
 tokio-serde = "0.8.0"
