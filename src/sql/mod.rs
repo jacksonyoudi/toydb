@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
 /// A datatype
+/// 定义数据类型
 #[derive(Clone, Debug, Hash, PartialEq, Serialize, Deserialize)]
 pub enum DataType {
     Boolean,
@@ -17,6 +18,7 @@ pub enum DataType {
     String,
 }
 
+/// 类型打印
 impl std::fmt::Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
@@ -29,6 +31,7 @@ impl std::fmt::Display for DataType {
 }
 
 /// A specific value of a data type
+/// 类型对应枚举值
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Null,
@@ -38,8 +41,12 @@ pub enum Value {
     String(String),
 }
 
-impl std::cmp::Eq for Value {}
 
+/// 实现等于
+impl Eq for Value {}
+
+
+/// 实现hash方法
 #[allow(clippy::derive_hash_xor_eq)]
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -54,12 +61,15 @@ impl Hash for Value {
     }
 }
 
+
+/// Value类型 隐式转换成 Cow类型
 impl<'a> From<Value> for Cow<'a, Value> {
     fn from(v: Value) -> Self {
         Cow::Owned(v)
     }
 }
 
+/// Value的借用类型, 转换成Cow
 impl<'a> From<&'a Value> for Cow<'a, Value> {
     fn from(v: &'a Value) -> Self {
         Cow::Borrowed(v)

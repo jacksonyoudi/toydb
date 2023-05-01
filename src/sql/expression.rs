@@ -7,24 +7,28 @@ use std::fmt::{self, Display};
 use std::mem::replace;
 
 /// An expression, made up of constants and operations
+/// 定义表达的
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Expression {
-    // Values
+    // Values 值
     Constant(Value),
     Field(usize, Option<(Option<String>, String)>),
 
     // Logical operations
+    // 逻辑运算
     And(Box<Expression>, Box<Expression>),
     Not(Box<Expression>),
     Or(Box<Expression>, Box<Expression>),
 
     // Comparisons operations (GTE, LTE, and NEQ are composite operations)
+    //  比较运算符
     Equal(Box<Expression>, Box<Expression>),
     GreaterThan(Box<Expression>, Box<Expression>),
     IsNull(Box<Expression>),
     LessThan(Box<Expression>, Box<Expression>),
 
     // Mathematical operations
+    // 算术运算符
     Add(Box<Expression>, Box<Expression>),
     Assert(Box<Expression>),
     Divide(Box<Expression>, Box<Expression>),
@@ -36,19 +40,22 @@ pub enum Expression {
     Subtract(Box<Expression>, Box<Expression>),
 
     // String operations
+    // 字符串运算符
     Like(Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
     /// Evaluates an expression to a value, given an environment
+    /// 计算表达式的值
     pub fn evaluate(&self, row: Option<&Row>) -> Result<Value> {
         use Value::*;
         Ok(match self {
-            // Constant values
+            // Constant values 常量表达式
             Self::Constant(c) => c.clone(),
             Self::Field(i, _) => row.and_then(|row| row.get(*i).cloned()).unwrap_or(Null),
 
             // Logical operations
+            // 逻辑运算
             Self::And(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Boolean(lhs), Boolean(rhs)) => Boolean(lhs && rhs),
                 (Boolean(lhs), Null) if !lhs => Boolean(false),
@@ -74,6 +81,7 @@ impl Expression {
             },
 
             // Comparison operations
+            // 比较运算
             #[allow(clippy::float_cmp)] // Up to the user if they want to compare or not
             Self::Equal(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Boolean(lhs), Boolean(rhs)) => Boolean(lhs == rhs),
@@ -119,6 +127,7 @@ impl Expression {
             },
 
             // Mathematical operations
+            // 算术运算
             Self::Add(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Integer(lhs), Integer(rhs)) => Integer(
                     lhs.checked_add(rhs).ok_or_else(|| Error::Value("Integer overflow".into()))?,
@@ -249,7 +258,7 @@ impl Expression {
                             .replace(".*.*", "%")
                             .replace("_", ".")
                             .replace("..", "_")
-                    ))?
+                    )).unwrap()
                         .is_match(&lhs),
                 ),
                 (String(_), Null) => Null,
@@ -310,6 +319,9 @@ impl Expression {
     }
 
     /// Walks the expression tree, calling a closure for every node. Halts if closure returns false.
+    /// 遍历每个表示式 得到结果
+    /// 递归运算
+    ///  区分成单操作数 和 双操作数, 常量操作
     pub fn walk<F: Fn(&Expression) -> bool>(&self, visitor: &F) -> bool {
         visitor(self)
             && match self {
