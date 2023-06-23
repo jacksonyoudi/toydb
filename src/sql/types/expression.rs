@@ -47,6 +47,7 @@ pub enum Expression {
 impl Expression {
     /// Evaluates an expression to a value, given an environment
     /// 计算表达式的值
+    /// 匹配不同类型的运算模式， 然后， 进行对应的算法处理
     pub fn evaluate(&self, row: Option<&Row>) -> Result<Value> {
         use Value::*;
         Ok(match self {
@@ -350,6 +351,7 @@ impl Expression {
 
     /// Converts the expression into its negation normal form. This pushes NOT operators into the
     /// tree using De Morgan's laws, such that they never occur before other logical operators.
+    /// 将表达式转换为其否定范式。这使用德摩根定律将 NOT 运算符推入树中，使它们永远不会出现在其他逻辑运算符之前。
     pub fn into_nnf(self) -> Self {
         use Expression::*;
         // FIXME This should use a single match, but it's not possible to match on the boxed
