@@ -21,7 +21,7 @@ pub enum DataType {
 /// 类型打印
 impl std::fmt::Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str(match self {
+                f.write_str(match self {
             Self::Boolean => "BOOLEAN",
             Self::Integer => "INTEGER",
             Self::Float => "FLOAT",

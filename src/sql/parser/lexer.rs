@@ -283,7 +283,7 @@ impl<'a> Lexer<'a> {
     /// Creates a new lexer for the given input string
     /// 输入字符串
     #[allow(dead_code)]
-    pub fn new(input: &'a str) -> Lexer<'a> {
+        pub fn new(input: &'a str) -> Lexer<'a> {
         Lexer {
             iter: input.chars().peekable()
         }

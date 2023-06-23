@@ -131,7 +131,8 @@ impl Expression {
             // 算术运算
             Self::Add(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Integer(lhs), Integer(rhs)) => Integer(
-                    lhs.checked_add(rhs).ok_or_else(|| Error::Value("Integer overflow".into()))?,
+                    lhs.checked_add(rhs)
+                        .ok_or_else(|| Error::Value("Integer overflow".into()))?,
                 ),
                 (Integer(lhs), Float(rhs)) => Float(lhs as f64 + rhs),
                 (Integer(_), Null) => Null,
@@ -181,12 +182,17 @@ impl Expression {
                 (Null, Integer(_)) => Null,
                 (Null, Null) => Null,
                 (lhs, rhs) => {
-                    return Err(Error::Value(format!("Can't exponentiate {} and {}", lhs, rhs)))
+                    return Err(Error::Value(format!(
+                        "Can't exponentiate {} and {}",
+                        lhs, rhs
+                    )))
                 }
             },
             Self::Factorial(expr) => match expr.evaluate(row)? {
                 Integer(i) if i < 0 => {
-                    return Err(Error::Value("Can't take factorial of negative number".into()))
+                    return Err(Error::Value(
+                        "Can't take factorial of negative number".into(),
+                    ))
                 }
                 Integer(i) => Integer((1..=i).fold(1, |a, b| a * b as i64)),
                 Null => Null,
@@ -207,12 +213,16 @@ impl Expression {
                 (Null, Integer(_)) => Null,
                 (Null, Null) => Null,
                 (lhs, rhs) => {
-                    return Err(Error::Value(format!("Can't take modulo of {} and {}", lhs, rhs)))
+                    return Err(Error::Value(format!(
+                        "Can't take modulo of {} and {}",
+                        lhs, rhs
+                    )))
                 }
             },
             Self::Multiply(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Integer(lhs), Integer(rhs)) => Integer(
-                    lhs.checked_mul(rhs).ok_or_else(|| Error::Value("Integer overflow".into()))?,
+                    lhs.checked_mul(rhs)
+                        .ok_or_else(|| Error::Value("Integer overflow".into()))?,
                 ),
                 (Integer(lhs), Float(rhs)) => Float(lhs as f64 * rhs),
                 (Integer(_), Null) => Null,
@@ -234,7 +244,8 @@ impl Expression {
             },
             Self::Subtract(lhs, rhs) => match (lhs.evaluate(row)?, rhs.evaluate(row)?) {
                 (Integer(lhs), Integer(rhs)) => Integer(
-                    lhs.checked_sub(rhs).ok_or_else(|| Error::Value("Integer overflow".into()))?,
+                    lhs.checked_sub(rhs)
+                        .ok_or_else(|| Error::Value("Integer overflow".into()))?,
                 ),
                 (Integer(lhs), Float(rhs)) => Float(lhs as f64 - rhs),
                 (Integer(_), Null) => Null,
@@ -259,8 +270,9 @@ impl Expression {
                             .replace(".*.*", "%")
                             .replace("_", ".")
                             .replace("..", "_")
-                    )).unwrap()
-                        .is_match(&lhs),
+                    ))
+                    .unwrap()
+                    .is_match(&lhs),
                 ),
                 (String(_), Null) => Null,
                 (Null, String(_)) => Null,
@@ -286,9 +298,9 @@ impl Expression {
 
     /// Transforms the expression tree by applying a closure before and after descending.
     pub fn transform<B, A>(mut self, before: &B, after: &A) -> Result<Self>
-        where
-            B: Fn(Self) -> Result<Self>,
-            A: Fn(Self) -> Result<Self>,
+    where
+        B: Fn(Self) -> Result<Self>,
+        A: Fn(Self) -> Result<Self>,
     {
         self = before(self)?;
         match &mut self {
@@ -326,27 +338,27 @@ impl Expression {
     pub fn walk<F: Fn(&Expression) -> bool>(&self, visitor: &F) -> bool {
         visitor(self)
             && match self {
-            Self::Add(lhs, rhs)
-            | Self::And(lhs, rhs)
-            | Self::Divide(lhs, rhs)
-            | Self::Equal(lhs, rhs)
-            | Self::Exponentiate(lhs, rhs)
-            | Self::GreaterThan(lhs, rhs)
-            | Self::LessThan(lhs, rhs)
-            | Self::Like(lhs, rhs)
-            | Self::Modulo(lhs, rhs)
-            | Self::Multiply(lhs, rhs)
-            | Self::Or(lhs, rhs)
-            | Self::Subtract(lhs, rhs) => lhs.walk(visitor) && rhs.walk(visitor),
+                Self::Add(lhs, rhs)
+                | Self::And(lhs, rhs)
+                | Self::Divide(lhs, rhs)
+                | Self::Equal(lhs, rhs)
+                | Self::Exponentiate(lhs, rhs)
+                | Self::GreaterThan(lhs, rhs)
+                | Self::LessThan(lhs, rhs)
+                | Self::Like(lhs, rhs)
+                | Self::Modulo(lhs, rhs)
+                | Self::Multiply(lhs, rhs)
+                | Self::Or(lhs, rhs)
+                | Self::Subtract(lhs, rhs) => lhs.walk(visitor) && rhs.walk(visitor),
 
-            Self::Assert(expr)
-            | Self::Factorial(expr)
-            | Self::IsNull(expr)
-            | Self::Negate(expr)
-            | Self::Not(expr) => expr.walk(visitor),
+                Self::Assert(expr)
+                | Self::Factorial(expr)
+                | Self::IsNull(expr)
+                | Self::Negate(expr)
+                | Self::Not(expr) => expr.walk(visitor),
 
-            Self::Constant(_) | Self::Field(_, _) => true,
-        }
+                Self::Constant(_) | Self::Field(_, _) => true,
+            }
     }
 
     /// Converts the expression into its negation normal form. This pushes NOT operators into the
@@ -368,24 +380,30 @@ impl Expression {
             },
             &|e| Ok(e),
         )
-            .unwrap()
+        .unwrap()
     }
 
+    /// 合取范式（Conjunctive Normal Form，CNF）是一个命题逻辑公式的标准化形式，
+    /// 其中该公式是若干个子句的合取，每个子句是若干个文字的析取。例如，$(p \lor q) \land (\neg p \lor r \lor s)$ 就是一个合取范式。
     /// Converts the expression into conjunctive normal form, i.e. an AND of ORs. This is done by
     /// converting to negation normal form and then applying the distributive law:
     /// (x AND y) OR z = (x OR z) AND (y OR z).
+    /// 将表达式转换为合取范式，即 OR 的 AND。这是通过将表达式转换为否定范式，然后应用分配律来完成的：
+    /// (x AND y) OR z = (x OR z) AND (y OR z)。
     pub fn into_cnf(self) -> Self {
         use Expression::*;
         self.into_nnf()
             .transform(
                 &|e| match e {
                     Or(lhs, rhs) => match (*lhs, *rhs) {
-                        (And(ll, lr), r) => {
-                            Ok(And(Or(ll, r.clone().into()).into(), Or(lr, r.into()).into()))
-                        }
-                        (l, And(rl, rr)) => {
-                            Ok(And(Or(l.clone().into(), rl).into(), Or(l.into(), rr).into()))
-                        }
+                        (And(ll, lr), r) => Ok(And(
+                            Or(ll, r.clone().into()).into(),
+                            Or(lr, r.into()).into(),
+                        )),
+                        (l, And(rl, rr)) => Ok(And(
+                            Or(l.clone().into(), rl).into(),
+                            Or(l.into(), rr).into(),
+                        )),
                         (lhs, rhs) => Ok(Or(lhs.into(), rhs.into())),
                     },
                     e => Ok(e),
@@ -414,18 +432,23 @@ impl Expression {
     /// Converts the expression into disjunctive normal form, i.e. an OR of ANDs. This is done by
     /// converting to negation normal form and then applying the distributive law:
     /// (x OR y) AND z = (x AND z) OR (y AND z).
+    /// 将表达式转换为析取范式，即 AND 的 OR。
+    /// 这是通过将表达式转换为否定范式，然后应用分配律来完成的：
+    /// (x OR y) AND z = (x AND z) OR (y AND z)。
     pub fn into_dnf(self) -> Self {
         use Expression::*;
         self.into_nnf()
             .transform(
                 &|e| match e {
                     And(lhs, rhs) => match (*lhs, *rhs) {
-                        (Or(ll, lr), r) => {
-                            Ok(Or(And(ll, r.clone().into()).into(), And(lr, r.into()).into()))
-                        }
-                        (l, Or(rl, rr)) => {
-                            Ok(Or(And(l.clone().into(), rl).into(), And(l.into(), rr).into()))
-                        }
+                        (Or(ll, lr), r) => Ok(Or(
+                            And(ll, r.clone().into()).into(),
+                            And(lr, r.into()).into(),
+                        )),
+                        (l, Or(rl, rr)) => Ok(Or(
+                            And(l.clone().into(), rl).into(),
+                            And(l.into(), rr).into(),
+                        )),
                         (lhs, rhs) => Ok(And(lhs.into(), rhs.into())),
                     },
                     e => Ok(e),
@@ -479,6 +502,8 @@ impl Expression {
 
     // Checks if the expression is a field lookup, and returns the list of values looked up.
     // Expressions must be a combination of =, IS NULL, OR to be converted.
+    // 检查表达式是否为字段查找，并返回查找的值列表。
+    // 表达式必须是 =、IS NULL、OR 的组合才能进行转换。
     pub fn as_lookup(&self, field: usize) -> Option<Vec<Value>> {
         use Expression::*;
         // FIXME This should use a single match level, but since the child expressions are boxed
@@ -527,7 +552,7 @@ impl Expression {
                 })
                 .collect(),
         )
-            .unwrap()
+        .unwrap()
     }
 }
 
