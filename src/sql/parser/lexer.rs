@@ -3,9 +3,73 @@ use crate::error::{Error, Result};
 use std::iter::Peekable;
 use std::str::Chars;
 
+// A lexer token
+#[derive(Clone, Debug, PartialEq)]
+pub enum Token {
+    Number(String),
+    String(String),
+    Ident(String),
+    Keyword(Keyword),
+    Period,
+    Equal,
+    GreaterThan,
+    GreaterThanOrEqual,
+    LessThan,
+    LessThanOrEqual,
+    LessOrGreaterThan,
+    Plus,
+    Minus,
+    Asterisk,
+    Slash,
+    Caret,
+    Percent,
+    Exclamation,
+    NotEqual,
+    Question,
+    OpenParen,
+    CloseParen,
+    Comma,
+    Semicolon,
+}
+
+impl std::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            Token::Number(n) => n,
+            Token::String(s) => s,
+            Token::Ident(s) => s,
+            Token::Keyword(k) => k.to_str(),
+            Token::Period => ".",
+            Token::Equal => "=",
+            Token::GreaterThan => ">",
+            Token::GreaterThanOrEqual => ">=",
+            Token::LessThan => "<",
+            Token::LessThanOrEqual => "<=",
+            Token::LessOrGreaterThan => "<>",
+            Token::Plus => "+",
+            Token::Minus => "-",
+            Token::Asterisk => "*",
+            Token::Slash => "/",
+            Token::Caret => "^",
+            Token::Percent => "%",
+            Token::Exclamation => "!",
+            Token::NotEqual => "!=",
+            Token::Question => "?",
+            Token::OpenParen => "(",
+            Token::CloseParen => ")",
+            Token::Comma => ",",
+            Token::Semicolon => ";",
+        })
+    }
+}
+
+impl From<Keyword> for Token {
+    fn from(keyword: Keyword) -> Self {
+        Self::Keyword(keyword)
+    }
+}
 
 /// Lexer keywords
-/// 关键字
 #[derive(Clone, Debug, PartialEq)]
 pub enum Keyword {
     And,
@@ -75,10 +139,8 @@ pub enum Keyword {
     Write,
 }
 
-/// 定义 关键字的 方法
 impl Keyword {
     #[allow(clippy::should_implement_trait)]
-    /// 字符串自动转 Keyword 类型
     pub fn from_str(ident: &str) -> Option<Self> {
         Some(match ident.to_uppercase().as_ref() {
             "AS" => Self::As,
@@ -150,7 +212,6 @@ impl Keyword {
         })
     }
 
-    /// keyword类型转 字符串
     pub fn to_str(&self) -> &str {
         match self {
             Self::As => "AS",
@@ -228,37 +289,6 @@ impl std::fmt::Display for Keyword {
     }
 }
 
-/// 分词
-/// A lexer token
-/// 定义分词的枚举
-#[derive(Clone, Debug, PartialEq)]
-pub enum Token {
-    Number(String),
-    String(String),
-    Ident(String),
-    Keyword(Keyword),
-    Period,
-    Equal,
-    GreaterThan,
-    GreaterThanOrEqual,
-    LessThan,
-    LessThanOrEqual,
-    LessOrGreaterThan,
-    Plus,
-    Minus,
-    Asterisk,
-    Slash,
-    Caret,
-    Percent,
-    Exclamation,
-    NotEqual,
-    Question,
-    OpenParen,
-    CloseParen,
-    Comma,
-    Semicolon,
-}
-
 /// A lexer tokenizes an input string as an iterator
 pub struct Lexer<'a> {
     iter: Peekable<Chars<'a>>,
@@ -267,39 +297,30 @@ pub struct Lexer<'a> {
 impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // 后面有实现
+    fn next(&mut self) -> Option<Result<Token>> {
         match self.scan() {
             Ok(Some(token)) => Some(Ok(token)),
-            // peek 返回下一个元素, 但是不会 移除
             Ok(None) => self.iter.peek().map(|c| Err(Error::Parse(format!("Unexpected character {}", c)))),
             Err(err) => Some(Err(err)),
         }
     }
 }
 
-
 impl<'a> Lexer<'a> {
     /// Creates a new lexer for the given input string
-    /// 输入字符串
     #[allow(dead_code)]
-        pub fn new(input: &'a str) -> Lexer<'a> {
-        Lexer {
-            iter: input.chars().peekable()
-        }
+    pub fn new(input: &'a str) -> Lexer<'a> {
+        Lexer { iter: input.chars().peekable() }
     }
 
     /// Consumes any whitespace characters
-    /// 消费掉空白字符
     fn consume_whitespace(&mut self) {
         self.next_while(|c| c.is_whitespace());
     }
 
     /// Grabs the next character if it matches the predicate function
-    /// 如果下一个字符与谓词函数匹配，则获取该字符
     fn next_if<F: Fn(char) -> bool>(&mut self, predicate: F) -> Option<char> {
         self.iter.peek().filter(|&c| predicate(*c))?;
-        //  游标移动
         self.iter.next()
     }
 
@@ -313,13 +334,11 @@ impl<'a> Lexer<'a> {
     /// Grabs the next characters that match the predicate, as a string
     fn next_while<F: Fn(char) -> bool>(&mut self, predicate: F) -> Option<String> {
         let mut value = String::new();
-        // 查找字符串, 找到一个token
         while let Some(c) = self.next_if(&predicate) {
             value.push(c)
         }
         Some(value).filter(|v| !v.is_empty())
     }
-
 
     /// Scans the input for the next token if any, ignoring leading whitespace
     fn scan(&mut self) -> Result<Option<Token>> {
@@ -346,7 +365,6 @@ impl<'a> Lexer<'a> {
     }
 
     /// Scans the input for the next quoted ident, if any
-    /// 扫描输入中的下一个引号标识符(如果有的话)
     fn scan_ident_quoted(&mut self) -> Result<Option<Token>> {
         if self.next_if(|c| c == '"').is_none() {
             return Ok(None);
@@ -364,7 +382,6 @@ impl<'a> Lexer<'a> {
     }
 
     /// Scans the input for the next number token, if any
-    /// 扫描输入以查找下一个数字标记(如果有的话)
     fn scan_number(&mut self) -> Option<Token> {
         let mut num = self.next_while(|c| c.is_digit(10))?;
         if let Some(sep) = self.next_if(|c| c == '.') {
@@ -424,31 +441,31 @@ impl<'a> Lexer<'a> {
             ';' => Some(Token::Semicolon),
             _ => None,
         })
-            .map(|token| match token {
-                Token::Exclamation => {
-                    if self.next_if(|c| c == '=').is_some() {
-                        Token::NotEqual
-                    } else {
-                        token
-                    }
+        .map(|token| match token {
+            Token::Exclamation => {
+                if self.next_if(|c| c == '=').is_some() {
+                    Token::NotEqual
+                } else {
+                    token
                 }
-                Token::LessThan => {
-                    if self.next_if(|c| c == '>').is_some() {
-                        Token::LessOrGreaterThan
-                    } else if self.next_if(|c| c == '=').is_some() {
-                        Token::LessThanOrEqual
-                    } else {
-                        token
-                    }
+            }
+            Token::LessThan => {
+                if self.next_if(|c| c == '>').is_some() {
+                    Token::LessOrGreaterThan
+                } else if self.next_if(|c| c == '=').is_some() {
+                    Token::LessThanOrEqual
+                } else {
+                    token
                 }
-                Token::GreaterThan => {
-                    if self.next_if(|c| c == '=').is_some() {
-                        Token::GreaterThanOrEqual
-                    } else {
-                        token
-                    }
+            }
+            Token::GreaterThan => {
+                if self.next_if(|c| c == '=').is_some() {
+                    Token::GreaterThanOrEqual
+                } else {
+                    token
                 }
-                _ => token,
-            })
+            }
+            _ => token,
+        })
     }
 }
