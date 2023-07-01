@@ -7,9 +7,12 @@ authors = ["liangchangyoujackson@gmail.com"]
 
 [dependencies]
 clippy = "0.0.302"
+futures = "0.3.28"
 lazy_static = "1.4.0"
 rand = "0.8.5"
 regex = "1.8.4"
 serde = "1.0.160"
 serde_derive = "1.0.160"
+tokio = "1.29.1"
 tokio-serde = "0.8.0"
+tokio-util = "0.7.8"
