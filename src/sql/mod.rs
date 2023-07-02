@@ -5,17 +5,15 @@ pub mod plan;
 pub mod schema;
 pub mod types;
 
-
-
 mod expression;
 pub use expression::Expression;
 
-use crate::error::{Error, Result};
+use crate::error::{ Error, Result };
 
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::{ Deserialize, Serialize };
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
+use std::hash::{ Hash, Hasher };
 
 /// A datatype
 /// 定义数据类型
@@ -50,10 +48,8 @@ pub enum Value {
     String(String),
 }
 
-
 /// 实现等于
 impl Eq for Value {}
-
 
 /// 实现hash方法
 #[allow(clippy::derive_hash_xor_eq)]
@@ -69,7 +65,6 @@ impl Hash for Value {
         }
     }
 }
-
 
 /// Value类型 隐式转换成 Cow类型
 impl<'a> From<Value> for Cow<'a, Value> {
@@ -133,15 +128,16 @@ impl Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(
-            match self {
-                Self::Null => "NULL".to_string(),
-                Self::Boolean(b) if *b => "TRUE".to_string(),
-                Self::Boolean(_) => "FALSE".to_string(),
-                Self::Integer(i) => i.to_string(),
-                Self::Float(f) => f.to_string(),
-                Self::String(s) => s.clone(),
-            }
-                .as_ref(),
+            (
+                match self {
+                    Self::Null => "NULL".to_string(),
+                    Self::Boolean(b) if *b => "TRUE".to_string(),
+                    Self::Boolean(_) => "FALSE".to_string(),
+                    Self::Integer(i) => i.to_string(),
+                    Self::Float(f) => f.to_string(),
+                    Self::String(s) => s.clone(),
+                }
+            ).as_ref()
         )
     }
 }

@@ -6,6 +6,8 @@ mod test;
 use crate::error::Result;
 
 use std::fmt::Display;
+
+/// 表示边界
 use std::ops::{Bound, RangeBounds};
 
 
@@ -13,6 +15,27 @@ use std::ops::{Bound, RangeBounds};
 pub struct Range {
     start: Bound<u64>,
     end: Bound<u64>,
+}
+
+impl Range {
+    /// 从给定的Rust范围创建一个新的范围。我们无法直接在scan()函数中使用RangeBounds，
+    /// 因为这会阻止我们将其存储到一个trait对象中。
+    pub fn from(range: impl RangeBounds<u64>) -> Self {
+        Self {
+            start: match range.start_bound() {
+                Bound::Included(v) => Bound::Included(*v),
+                Bound::Excluded(v) => Bound::Excluded(*v),
+                Bound::Unbounded => Bound::Unbounded,
+            },
+            end: match range.end_bound() {
+                Bound::Included(v) => Bound::Included(*v),
+                Bound::Excluded(v) => Bound::Excluded(*v),
+                Bound::Unbounded => Bound::Unbounded,
+            }
+
+
+        }
+    }
 }
 
 
@@ -55,3 +78,13 @@ pub trait Store: Display + Sync + Send {
         self.len() == 0
     }
 }
+
+
+
+/// Iterator over a log range.
+pub type Scan<'a> = Box<dyn Iterator<Item = Result<Vec<u8>>> + 'a>;
+
+
+
+// TODO 
+// TEST
