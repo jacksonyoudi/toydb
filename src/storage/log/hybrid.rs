@@ -3,6 +3,7 @@ use crate::error::{Error, Result};
 
 use bincode;
 use bincode::config::FixintEncoding;
+use futures::stream::Scan;
 use std::cmp::{max, min};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -48,21 +49,19 @@ impl Display for Hybrid {
 impl Hybrid {
     /// Creates or opens a new hybrid log, with files in the given directory.
     pub fn new(dir: &Path, sync: bool) -> Result<Self> {
-        create_dir_all(dir).unwrap();
+        create_dir_all(dir)?;
 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(dir.join("raft-log"))
-            .unwrap();
+            .open(dir.join("raft-log"))?;
 
         let metadata_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(dir.join("raft-metadata"))
-            .unwrap();
+            .open(dir.join("raft-metadata"))?;
 
         Ok(Self {
             file: Mutex::new(file),
@@ -76,19 +75,19 @@ impl Hybrid {
 
     /// Builds the index by scanning the log file.
     fn build_index(file: &File) -> Result<BTreeMap<u64, (u64, u32)>> {
-        let filesize = file.metadata().unwrap().len();
+        let filesize = file.metadata()?.len();
         let mut bufreader = BufReader::new(file);
         let mut index = BTreeMap::new();
         let mut sizebuf = [0; 4];
         let mut pos = 0;
         let mut i = 1;
         while pos < filesize {
-            bufreader.read_exact(&mut sizebuf).unwrap();
+            bufreader.read_exact(&mut sizebuf)?;
             pos += 4;
             let size = u32::from_be_bytes(sizebuf);
             index.insert(i, (pos, size));
             let mut buf = vec![0; size as usize];
-            bufreader.read_exact(&mut buf).unwrap();
+            bufreader.read_exact(&mut buf)?;
             pos += size as u64;
             i += 1;
         }
@@ -137,32 +136,29 @@ impl Store for Hybrid {
             return Ok(());
         }
 
-        let mut file = self.file.lock().unwrap();
+        let mut file = self.file.lock()?;
         // 获取当前pos
-        let mut pos = file.seek(SeekFrom::End(0)).unwrap();
+        let mut pos = file.seek(SeekFrom::End(0))?;
         let mut bufwriter = BufWriter::new(&mut *file);
         for i in (self.index.len() as u64 + 1)..=index {
             let entry = self
                 .uncommitted
                 .pop_front()
-                .ok_or_else(|| Error::Internal("Unexpected end of uncommitted entries".into()))
-                .unwrap();
+                .ok_or_else(|| Error::Internal("Unexpected end of uncommitted entries".into()))?;
 
             // 写入长度
-            bufwriter
-                .write_all(&(entry.len() as u32).to_be_bytes())
-                .unwrap();
+            bufwriter.write_all(&(entry.len() as u32).to_be_bytes())?;
             pos += 4;
             self.index.insert(i, (pos, entry.len() as u32));
-            bufwriter.write_all(&entry).unwrap();
+            bufwriter.write_all(&entry)?;
             pos += entry.len() as u64;
         }
 
-        bufwriter.flush().unwrap();
+        bufwriter.flush()?;
         drop(bufwriter);
 
         if self.sync {
-            file.sync_data().unwrap();
+            file.sync_data()?;
         }
         Ok(())
     }
@@ -179,34 +175,158 @@ impl Store for Hybrid {
                     Error::Internal(format!("Indexed position not found for entry {}", i))
                 })?;
                 let mut entry = vec![0; size as usize];
-                let mut file = self.file.lock().unwrap();
-                file.seek(SeekFrom::Start(pos)).unwrap();
-
+                let mut file = self.file.lock()?;
+                file.seek(SeekFrom::Start(pos))?;
+                file.read_exact(&mut entry)?;
+                Ok(Some(entry))
             }
+            i => Ok(self
+                .uncommitted
+                .get(i as usize - self.index.len() - 1)
+                .cloned()),
         }
     }
 
     fn len(&self) -> u64 {
-        todo!()
+        self.index.len() as u64 + self.uncommitted.len() as u64
     }
 
     fn scan(&self, range: Range) -> Scan {
-        todo!()
+        let start = match range.start {
+            Bound::Included(0) => 1,
+            Bound::Included(n) => n,
+            Bound::Excluded(n) => n + 1,
+            Bound::Unbounded => 1,
+        };
+        let end = match range.end {
+            Bound::Included(n) => n,
+            Bound::Excluded(0) => 0,
+            Bound::Excluded(n) => n - 1,
+            Bound::Unbounded => self.len(),
+        };
+
+        // 这里需要指定
+        let mut scan: Scan = Box::new(std::iter::empty());
+        if start > end {
+            return scan;
+        }
+
+        // Scan committed entries in file
+        if let Some((offset, _)) = self.index.get(&start) {
+            let mut file = self.file.lock().unwrap();
+            file.seek(SeekFrom::Start(*offset - 4)).unwrap(); // seek to length prefix
+            let mut bufreader = BufReader::new(MutexReader(file)); // FIXME Avoid MutexReader
+            scan = Box::new(scan.chain(self.index.range(start..=end).map(
+                move |(_, (_, size))| {
+                    let mut sizebuf = vec![0; 4];
+                    bufreader.read_exact(&mut sizebuf)?;
+                    let mut entry = vec![0; *size as usize];
+                    bufreader.read_exact(&mut entry)?;
+                    Ok(entry)
+                },
+            )));
+        }
+
+        // Scan uncommitted entries in memory
+        if end > self.index.len() as u64 {
+            scan = Box::new(
+                scan.chain(
+                    self.uncommitted
+                        .iter()
+                        .skip(start as usize - min(start as usize, self.index.len() + 1))
+                        .take(end as usize - max(start as usize, self.index.len()) + 1)
+                        .cloned()
+                        .map(Ok),
+                ),
+            )
+        }
+        scan
     }
 
     fn size(&self) -> u64 {
-        todo!()
+        self.index
+            .iter()
+            .next_back()
+            .map(|(_, (pos, size))| *pos + *size as u64)
+            .unwrap_or(0)
     }
 
     fn truncate(&mut self, index: u64) -> Result<u64> {
-        todo!()
+        if index < self.index.len() as u64 {
+            return Err(Error::Internal(format!(
+                "Cannot truncate below committed index {}",
+                self.index.len() as u64
+            )));
+        }
+        self.uncommitted.truncate(index as usize - self.index.len());
+        Ok(self.len())
     }
 
     fn get_metadata(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        todo!()
+        Ok(self.metadata.get(key).cloned())
     }
 
     fn set_metadata(&mut self, key: &[u8], value: Vec<u8>) -> Result<()> {
-        todo!()
+        self.metadata.insert(key.to_vec(), value);
+        self.metadata_file.set_len(0)?;
+        self.metadata_file.seek(SeekFrom::Start(0))?;
+        bincode::serialize_into(&mut self.metadata_file, &self.metadata)?;
+        if self.sync {
+            self.metadata_file.sync_data()?;
+        }
+        Ok(())
     }
 }
+
+impl Drop for Hybrid {
+    /// Attempt to fsync data on drop, in case we're running without sync.
+    fn drop(&mut self) {
+        self.metadata_file.sync_all().ok();
+        self.file.lock().map(|f| f.sync_all()).ok();
+    }
+}
+
+struct MutexReader<'a>(MutexGuard<'a, File>);
+
+impl<'a> Read for MutexReader<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+#[cfg(test)]
+impl super::TestSuite<Hybrid> for Hybrid {
+    fn setup() -> Result<Self> {
+        let dir = tempdir::TempDir::new("toydb")?;
+        Hybrid::new(dir.as_ref(), false)
+    }
+}
+
+#[test]
+fn tests() -> Result<()> {
+    use super::TestSuite;
+    Hybrid::test()
+}
+
+#[test]
+fn test_persistent() -> Result<()> {
+    let dir = tempdir::TempDir::new("toydb")?;
+    let mut l = Hybrid::new(dir.as_ref(), true)?;
+
+    l.append(vec![0x01])?;
+    l.append(vec![0x02])?;
+    l.append(vec![0x03])?;
+    l.append(vec![0x04])?;
+    l.append(vec![0x05])?;
+    l.commit(3)?;
+
+    let l = Hybrid::new(dir.as_ref(), true)?;
+
+    assert_eq!(
+        vec![vec![1], vec![2], vec![3]],
+        l.scan(Range::from(..)).collect::<Result<Vec<_>>>()?
+    );
+
+    Ok(())
+}
+
