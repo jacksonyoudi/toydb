@@ -4,6 +4,7 @@ use crate::error::{Error, Result};
 use bincode;
 use bincode::config::FixintEncoding;
 use std::cmp::{max, min};
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt::Display;
 use std::fs::{create_dir_all, File, OpenOptions};
@@ -11,6 +12,7 @@ use std::io::{BufReader, BufWriter, Read, Seek as _, SeekFrom, Write};
 use std::ops::Bound;
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
+use tokio_util::sync::PollSemaphore;
 
 /// 一个混合日志存储，将已提交的条目存储在追加写文件中，未提交的条目存储在内存中，元数据存储在单独的文件中（应为磁盘上的键值存储）。
 ///
@@ -111,22 +113,77 @@ impl Hybrid {
     }
 }
 
-
 impl Store for Hybrid {
     fn append(&mut self, entry: Vec<u8>) -> Result<u64> {
-        todo!()
+        self.uncommitted.push_back(entry);
+        Ok(self.len())
     }
 
     fn commit(&mut self, index: u64) -> Result<()> {
-        todo!()
+        if index > self.len() {
+            return Err(Error::Internal(format!(
+                "Cannot commit non-existant index {}",
+                index
+            )));
+        }
+
+        if index < self.index.len() as u64 {
+            return Err(Error::Internal(format!(
+                "Cannot commit below current committed index {}",
+                self.index.len() as u64
+            )));
+        }
+        if index == self.index.len() as u64 {
+            return Ok(());
+        }
+
+        let mut file = self.file.lock().unwrap();
+        // 获取当前pos
+        let mut pos = file.seek(SeekFrom::End(0)).unwrap();
+        let mut bufwriter = BufWriter::new(&mut *file);
+        for i in (self.index.len() as u64 + 1)..=index {
+            let entry = self
+                .uncommitted
+                .pop_front()
+                .ok_or_else(|| Error::Internal("Unexpected end of uncommitted entries".into()))
+                .unwrap();
+
+            // 写入长度
+            bufwriter
+                .write_all(&(entry.len() as u32).to_be_bytes())
+                .unwrap();
+            pos += 4;
+            self.index.insert(i, (pos, entry.len() as u32));
+            bufwriter.write_all(&entry).unwrap();
+            pos += entry.len() as u64;
+        }
+
+        bufwriter.flush().unwrap();
+        drop(bufwriter);
+
+        if self.sync {
+            file.sync_data().unwrap();
+        }
+        Ok(())
     }
 
     fn committed(&self) -> u64 {
-        todo!()
+        self.index.len() as u64
     }
 
     fn get(&self, index: u64) -> Result<Option<Vec<u8>>> {
-        todo!()
+        match index {
+            0 => Ok(None),
+            i if i <= self.index.len() as u64 => {
+                let (pos, size) = self.index.get(&i).copied().ok_or_else(|| {
+                    Error::Internal(format!("Indexed position not found for entry {}", i))
+                })?;
+                let mut entry = vec![0; size as usize];
+                let mut file = self.file.lock().unwrap();
+                file.seek(SeekFrom::Start(pos)).unwrap();
+
+            }
+        }
     }
 
     fn len(&self) -> u64 {
